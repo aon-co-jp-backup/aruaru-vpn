@@ -200,3 +200,7 @@ See [`CLAUDE.md`](CLAUDE.md) ("HANDOFF") for open items and known
 limitations, and [`PORTING.md`](PORTING.md) for the detailed design
 history (notably phase 28: why the `craftls` fork wasn't adopted, and the
 partial fingerprint-mimicry scope that rustls's public API allows).
+
+---
+
+作者 / Author: 石塚正浩（MASAHIRO ISHIZUKA） (https://github.com/aon-co-jp)
