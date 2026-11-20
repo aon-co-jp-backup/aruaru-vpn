@@ -1,0 +1,324 @@
+# 開発方針＆開発環境ルール(aruaru-vpn)
+
+作業ドライブは`F:\aruaru-vpn`。この節は
+[`open-raid-z`](https://github.com/aon-co-jp/open-raid-z)の`CLAUDE.md`を
+**正本**とし、各プロジェクトへコピーして同期する既存の運用ルール継承方針に
+準じる(比較的新しいフレームワークの参照資料一覧・AI駆動開発ツールに関する
+所感・確認不要の自動継続/リミット解除後の自動再開・白画面バグ等を見逃さない
+検証徹底、等の全リポジトリ共通ルールは、詳細をここに複製せず
+`open-raid-z/CLAUDE.md`を参照すること)。
+
+## このリポジトリの役割
+
+[Outline VPN](https://getoutline.org/)・[Algo VPN](https://github.com/trailofbits/algo)を
+参考に、コードを一切流用せず一からRust + `open-web-server`で再実装する、
+「利用者が自分で借りたVPS上に、自分専用のプライバシー中継(VPN)を立てられる」
+OSSテンプレート。**aon-co-jpは中継サーバーを運営しない**(テンプレートの
+配布のみ)。詳細な構想・開発の経緯は[`README.md`](README.md)を参照。
+
+## 重要方針: 暗号プリミティブは自作しない(2026-09-27決定)
+
+「既存実装のコードを一切流用せず一から開発する」というエコシステム共通
+方針は、**アプリケーション/プロトコルのアーキテクチャ**に適用するもので
+あり、**暗号アルゴリズムそのもの(X25519・AES・ChaCha20・SHA-2・Noise
+プロトコル等)の独自実装には適用しない**。暗号プリミティブを自作する
+ことは、たとえ動いているように見えても重大な脆弱性を生みやすい、
+というのが暗号工学における一般的な原則であるため、監査済みの
+Rust crate([x25519-dalek](https://crates.io/crates/x25519-dalek)、
+[hkdf](https://crates.io/crates/hkdf)、[snow](https://crates.io/crates/snow)
+等)に委ねる。参考にする範囲は「これらのライブラリの上にどう
+REALITY/WireGuard相当のプロトコルを組み立てるか」というアーキテクチャ
+部分のみ。
+
+## 鍵管理方針: ローカルファイル経由、チャットへの貼り付け・表示禁止(2026-09-27決定)
+
+秘密鍵・PSK(事前共有鍵)等の実際の値は、**必ずローカルドライブ上のファイル
+として管理し、チャット上にコピー&ペーストしたり、そのまま表示したりしない**
+([`feedback_keys_via_files_never_echo.md`]記憶メモの既存方針と同じ)。
+
+- **保存場所**: `F:\aruaru-vpn\secrets\<peer名>.key`のように、ディレクトリと
+  ファイル名を明示的に指定する形で保存する(実装時に実際のパス規約を確定)。
+- **チャットでのやり取り**: 鍵の値そのものではなく、**ファイルパスだけ**を
+  チャット上で参照する。値を貼り付けたり、コミット・ログに残したりしない。
+- **多言語表示**: この方針や関連する注意書きを利用者に説明する際、日本語・
+  英語に加えて利用者が選択している表示言語がある場合は、その言語にも
+  翻訳して表示する(2026-09-27ユーザー指示。`open-tv-chat`の多言語対応
+  ポリシーと同じ考え方)。
+
+## 最重要方針: 用途を隠さない(2026-09-27決定)
+
+このリポジトリの存在意義は「正直さ」にある。開発・ドキュメント・配布方法の
+いずれにおいても、以下を徹底すること:
+
+- **本来の機能を偽装したり、別の目的のアプリであるかのように見せかけたりしない**。
+  README・アプリの説明・ストア掲載文等すべてで「これは自分専用のVPN/中継
+  サーバーを自分のVPS上に立てるためのツールである」ことを明記する。
+- **aon-co-jpが中継サーバー自体を運営することはない**。運営責任は常に
+  「自分のVPSに自分でセットアップした利用者本人」にある、という設計・
+  説明を崩さないこと。この一線を越えると、`open-LiveKit`側で見送った
+  「VPN事業者としての法的責任」の議論が再燃するため、実装時も常に
+  この境界を意識すること。
+
+## 開発の経緯(なぜこのリポジトリが生まれたか)
+
+`open-tv-chat`/`open-LiveKit`の開発中に「TV CHAT利用者向けの汎用VPNアプリも
+同時開発してはどうか」という提案があり、(1)独立VPN事業として運営する案
+(法的リスクで見送り)→(2)本来の目的を隠して別サイトとして配布する案
+(不誠実・検知回避ツール認定リスクで見送り)→(3)Outline VPN/Algo VPN型の
+「利用者自身がVPSを運用する、用途を隠さないOSSテンプレート」に着地、という
+経緯を経ている。詳細は[`README.md`](README.md)「開発の経緯」、
+[`open-LiveKit`のPORTING.md](https://github.com/aon-co-jp/open-LiveKit/blob/main/PORTING.md)
+「8. 踏み台の用途スコープの検討経緯」を参照。
+
+## 技術方針
+
+- **プロトコル**: **WireGuard+AmneziaWG型(高速・軽量)と
+  VLESS+REALITY型(検閲耐性最強、TLS偽装)を並行して同時開発**する
+  (2026-09-27最終決定)。当初VLESS+REALITYは「Rust実装未成熟」を理由に
+  見送ったが、ユーザーから「世界中の言語でGoogle検索・GitHub調査をして
+  冷静に検討して」と再検討を求められ、実際には[xray-lite](https://github.com/undead-undead/xray-lite)
+  等の本番志向Rust実装が既に存在することが判明し、判断を訂正した
+  (**事実誤認は必ず訂正すること**、というエコシステム共通の教訓)。
+- 配布形態・鍵管理方式は未確定。[`README.md`](README.md)「技術選定」を
+  参照。決め打ちせず、実装着手時にGoogle検索・GitHub調査を経て決定する
+  (`open-LiveKit`と同じ開発姿勢)。
+
+## 関連リポジトリとの連携(構想段階、2026-09-27)
+
+`aruaru-llm`(AIによる通信パターン擬態)・`open-cuda`(暗号処理/AI推論の
+GPU高速化)・`open-directx`(クライアント管理UIの高速描画、open-cudaと
+計算基盤共有)と連携する構想がある。ただし`open-cuda`/`open-directx`は
+現状README/CLAUDE.md/PORTING.mdが未整備・実体が乏しく、連携実装は
+これらの成熟を待つ。VLESS+REALITY本体の実装は連携なしで進める。詳細は
+[`README.md`](README.md)「関連リポジトリとの連携」、
+[`PORTING.md`](PORTING.md)「8. 関連リポジトリとの連携方針」を参照。
+
+## HANDOFF
+
+**🛑 再開用メッセージ(次回このセッションを続ける人へ、2026-09-30時点・
+実装フェーズ18完了)**: 前回HANDOFFの(c)は未着手のまま、ユーザーから新規
+指示「uTLSのようなブラウザ指紋偽装が未実装」を受けて実装した。
+`cargo test`で84テスト全通過。
+
+- **ブラウザTLS指紋偽装(部分的)完了**: [craftls](https://github.com/3andne/craftls)
+  というrustlsフォーク(GREASE・拡張permutation対応)を調査したが、クレート名
+  の食い違い+`rustls 0.22`系限定という2つの理由で採用を断念。`rustls`の
+  公開APIだけで実現できる範囲(暗号スイート順序・鍵交換グループ・ALPN・
+  署名アルゴリズム一覧をChromeに寄せる)を実装した(`PORTING.md`「28.」)。
+  拡張の並び順・GREASEは`rustls`の限界で未実現、正直に明記済み。
+- **RPoemへの共通ライブラリ化(恒久方針として今後も継続)**: ユーザーから
+  「関連開発でライブラリ化・フレームワーク化した方がメリットがある部分は、
+  今後もRPoemに組み込む」との指示があり、上記実装を`F:\RPoem`の新規crate
+  [`open-runo-tls-fingerprint`](https://github.com/aon-co-jp/RPoem/tree/main/crates/open-runo-tls-fingerprint)
+  へ切り出した。`aruaru-vpn`の`Cargo.toml`はこれをgit依存として参照
+  (`cert_clone.rs`から使用)。**この方針はメモリ
+  `feedback_rpoem_shared_library_policy`に記録済み、今後も汎用化できる
+  ロジックを見つけたらRPoemへの切り出しを検討すること**。
+- (c)(`key_share`固定によるプライバシートレードオフ)は依然未着手。
+
+次回の候補(優先度順ではない、着手前に必ずユーザーに確認): (c)の再検討、
+ユーザーから提起された「`open-web-server`をApache、RPoemをTomcatのような
+多段Webサーバーとして機能させる/再開発する」という別件の調査(まだ着手前、
+`open-web-server`と`RPoem`両リポジトリの現状調査から)、`PORTING.md`「20.」
+の中長期ロードマップ(将来のTLSプロトコル動向追従等)。
+
+- **2026-09-28 実装フェーズ10完了(独自セキュアトランスポート+実配線、
+  致命的バグ2件を発見・修正)**: `rustls`ベースのTLS終端を実配線しようと
+  したところ、私たちのREALITY認証(ClientHelloの`session_id`欄への
+  非標準な認証タグ埋め込み)が標準TLSライブラリと根本的に非互換だと
+  判明。ユーザーと相談し、完全なTLS 1.3準拠(既存ライブラリとの相互
+  接続性)は目指さず、**REALITY認証で確立済みのX25519共有鍵からAEAD
+  暗号化レコード層を独自導出する「自前の最小限のセキュアトランスポート」**
+  ([`src/secure_channel.rs`](src/secure_channel.rs)、ChaCha20-Poly1305は
+  監査済みcrateに委ね自作しない)を実装。`accept_and_route`/
+  `handle_relay_session_secure`([`src/net.rs`](src/net.rs))へ実配線し、
+  フルパイプラインのend-to-endテストを書いたところ、**(1)
+  `tokio::io::split`の片方向クローズを誤解した実装によるデッドロック、
+  (2)TLSレコード境界を超えた「まとめ読み」によるバイト列消失、という
+  致命的なバグ2件**を発見・修正(`SecureWriter::shutdown()`の追加、
+  `read_exactly_one_tls_record`への置き換え)。`cargo test`で65テスト
+  全通過。証明書クローン・secure_channelのUDP/MUX対応・将来の本物の
+  TLS 1.3準拠は引き続き未着手(ロードマップとして`PORTING.md`「20.」に記録)。
+- **2026-09-28 実装フェーズ9完了(実TLS終端の試作品)**: [`src/tls_terminate.rs`](src/tls_terminate.rs)
+  で`rustls`/`tokio-rustls`を使い、自己署名証明書(`rcgen`で動的生成)に
+  よる実際のTLSハンドシェイク完了を実装。`PrefixedStream`で
+  「既に読み取り済みのClientHello先頭バイトを巻き戻す」仕組みを作り、
+  `accept_and_route`のような「最初に覗き見てから処理を続ける」設計と
+  実TLSハンドシェイクが両立することを確認。ユーザーとの合意により、
+  証明書クローン(偽装先サイトの本物証明書の流用)は次フェーズ、まずは
+  自己署名証明書からスタート。`cargo test`で59テスト全通過。
+- **2026-09-28 実装フェーズ8完了**: [`src/vless.rs`](src/vless.rs)に
+  `AllowedUuids`/`validate_uuid`を追加し、VLESS自身のUUIDによる二段構え
+  認証(輸送路のREALITY/TLSとは別)を実装。`net.rs`の
+  `handle_relay_session`にUUID検証を組み込み(未登録UUIDは宛先接続前に
+  拒否)、`Command::Udp`の実処理(`relay_udp`)を追加して実UDPソケットでの
+  往復をend-to-endで確認。`Command::Mux`は引き続き未対応。`cargo test`で
+  58テスト全通過。
+- **2026-09-28 実装フェーズ6・7完了**: [`src/key_storage.rs`](src/key_storage.rs)
+  で秘密鍵/公開鍵の保存先ドライブ/ディレクトリを利用者が任意に選択できる
+  ようにした(`KeyStorageConfig`)。「保存先を平文メモに自動記録する」機能は
+  一度実装したがセキュリティ上の懸念(鍵ファイルの場所の手がかりを与える)
+  でユーザー指摘により撤回・削除済み。続けて[`src/vless.rs`](src/vless.rs)
+  にVLESSリクエストヘッダのパーサーを実装し、`net.rs`の`handle_relay_session`
+  でREALITY認証通過後の接続が実際にVLESSの指定する宛先へ中継されることを
+  end-to-endで確認。`cargo test`で53テスト全通過。UUID検証・UDP/MUX対応・
+  実TLS終端との統合は未着手。
+- **2026-09-28 実装フェーズ5完了+鍵管理方針決定**: [`src/net.rs`](src/net.rs)
+  で全モジュールを実際のTCP/UDPソケットに統合。`accept_and_route`で
+  REALITY判定→認証失敗時は実TCP接続で偽装先へ双方向中継、
+  `perform_handshake_over_udp`でWireGuard相当のハンドシェイクを実UDP越しに
+  実施。テスト中に発見したバグ(モックサーバーの早期切断でWindows上
+  `ConnectionReset`が発生)を、クライアント側の`shutdown()`を待ってから
+  閉じる実装に修正。`cargo test`で39テスト全通過。あわせてユーザー指示
+  により鍵管理方針(秘密鍵/PSKはローカルファイルのみで管理、チャットに
+  値を貼り付け・表示しない、説明は日英+選択言語に翻訳)を決定。
+- **2026-09-27 実装フェーズ4完了**: 未統合だった3項目を統合。(1)
+  `tls_clienthello.rs`に`key_share`拡張パースを追加し
+  `reality::decide_from_client_hello_record_x25519`でTLS層とX25519認証を
+  接続、(2)`amnezia.rs`に`build_obfuscated_send_sequence`/
+  `extract_real_handshake_message`を追加しWireGuardハンドシェイク
+  メッセージをジャンクパケットに埋め込むend-to-end統合、(3)
+  `wireguard_handshake.rs`にPSK(`Noise_IKpsk2`)対応を追加。`cargo test`で
+  36テスト全通過。次は実ネットワークI/O統合・配布形態/鍵管理の検討。
+- **2026-09-27 実装フェーズ3完了**: [`src/reality_auth.rs`](src/reality_auth.rs)
+  にX25519 ECDH+HKDFによるREALITY本来の認証タグ検証(暗号プリミティブは
+  x25519-dalek/hkdf crateに委ねる)、[`src/wireguard_handshake.rs`](src/wireguard_handshake.rs)
+  にWireGuard相当のNoise_IKハンドシェイク(snow crateを土台)を実装。
+  `cargo test`で26テスト全通過。TLS層(key_share拡張)への統合、
+  AmneziaWGジャンクパケットとの組み合わせ、PSK追加は未着手。
+- **2026-09-27 実装フェーズ2完了**: [`src/tls_clienthello.rs`](src/tls_clienthello.rs)
+  にTLS ClientHelloの最小パーサー(SNI・session_id抽出)、
+  [`src/amnezia.rs`](src/amnezia.rs)にAmneziaWGの核心機構(ジャンク
+  パケット送信計画)を実装。`reality.rs`に`decide_from_client_hello_record`
+  を追加しTLS層と統合。`cargo test`で19テスト全通過。X25519鍵共有への
+  認証情報埋め込み・uTLS指紋偽装・WireGuard本体の暗号処理は未着手。
+- **2026-09-27 実装フェーズ1完了**: `cargo init`でRustプロジェクトを作成。
+  [`src/reality.rs`](src/reality.rs)にREALITYの核心ロジック(認証判定→
+  フォールバック転送)、[`src/integration.rs`](src/integration.rs)に
+  `aruaru-llm`/`open-cuda`向けの連携トレイト(既定は何もしないフォール
+  バック実装、両リポジトリが育ったら差し替え可能)を実装。`cargo test`で
+  8テスト全通過。実TLS層への統合(uTLS指紋偽装等)は未着手。
+- **2026-09-27 リポジトリ新設+プロトコル選定(2回改訂)**:
+  `aon-co-jp/aruaru-vpn`を新規作成。Outline VPN/Algo VPNのアーキテクチャ
+  調査、開発方針(用途を隠さない、aon-co-jpは中継を運営しない)、透明性
+  告知文(日英+主要30ヶ国語)を作成。プロトコルは当初WireGuard+AmneziaWG
+  のみに決定したが、ユーザーから「VLESS+REALITYもRust+RPoemで世界中の
+  言語でGoogle検索・GitHub調査して冷静に検討して」と再調査を求められ、
+  「Rust実装は未成熟」という当初判断が誤りだったと判明(xray-lite等の
+  本番志向実装が実在)。最終的に**WireGuard+AmneziaWGとVLESS+REALITYを
+  並行して同時開発**する方針に確定。実装は未着手。次回再開時は
+  [`PORTING.md`](PORTING.md)の「次回再開ポイント」を参照。
+
+## API 方針: REST 全廃・gRPC / Connect へ (2026-11-04)
+
+### 日本語
+- **REST は全廃する。新しい API は REST で作らない。** ブラウザや `curl` から呼ぶ API は **Connect の単純呼び出し**(`POST /<パッケージ>.<Service>/<Method>`、`content-type: application/json`、本文は JSON)、サービス間は **gRPC / gRPC-web**(RPoem の管理API `open_runo.admin.v1.Admin` と同じ流儀)。ストリーミングは、必要になってから。
+- **既存の REST は、触るときに順に移す。** 移したら旧 REST の経路は消す。移行が終わるまで残るが、**新規には追加しない**。
+- **JSON は RS-JSON に統一**する(読み込みは `from_str_secure` / `parse_secure` でサイズ・深さ・重複キーの上限つき、書き出しは `rust_json::fast`)。ブラウザの WASM に `prost` は入れない(サイズが増えるため)。
+- **例外(自分たちの API ではなく、相手の規格が決めているもの)**: ACME、OAuth/OIDC のコールバック、第三者(GitHub など)からの Webhook、ヘルスチェック、静的ファイル配信、OTLP など。これらは規格どおりの HTTP を受ける。
+- 参考実装: `RPoem`(`open_runo.admin.v1.Admin`)、`open-easy-web`(`server/src/connect.rs`、`proto/open_easy_web/admin/v1/admin.proto`)。
+- ※ このリポジトリのコードが既に方針どおりかどうかは、各リポジトリの現状による。この節は方針の記録であり、コードの変更を意味しない。
+
+### English
+- **REST is being abolished. New APIs are not built as REST.** APIs called from browsers or `curl` use **Connect unary calls** (`POST /<package>.<Service>/<Method>`, `content-type: application/json`, JSON body); service-to-service calls use **gRPC / gRPC-web** (the same style as RPoem's admin API `open_runo.admin.v1.Admin`). Streaming only when it is actually needed.
+- **Existing REST endpoints are migrated one by one, when they are touched.** The old REST route is removed once migrated. Until migration is finished they remain, but **no new ones are added**.
+- **JSON is unified on RS-JSON**: reading with `from_str_secure` / `parse_secure` (size, depth and duplicate-key limits), writing with `rust_json::fast`. `prost` is not put into browser WASM (it would grow the binary).
+- **Exceptions (shapes dictated by someone else's standard, not our own API)**: ACME, OAuth/OIDC callbacks, webhooks from third parties (e.g. GitHub), health checks, static file serving, OTLP, and so on. These accept plain HTTP as the standard requires.
+- Reference implementations: `RPoem` (`open_runo.admin.v1.Admin`) and `open-easy-web` (`server/src/connect.rs`, `proto/open_easy_web/admin/v1/admin.proto`).
+- Note: whether the code in a given repository already follows this policy depends on that repository. This section records the policy; it does not mean the code has been changed.
+
+### Deutsch (KI-Übersetzung, redaktionell überarbeitet; noch nicht von Muttersprachlern geprüft)
+- **REST wird vollständig abgeschafft; neue APIs entstehen nicht mehr als REST.** APIs, die aus dem Browser oder per `curl` aufgerufen werden, verwenden **unäre Connect-Aufrufe** (`POST /<Paket>.<Service>/<Methode>`, `content-type: application/json`, JSON-Body). Zwischen Diensten kommen **gRPC bzw. gRPC-web** zum Einsatz, im selben Stil wie die Admin-API von RPoem (`open_runo.admin.v1.Admin`). Streaming wird erst ergänzt, wenn es tatsächlich gebraucht wird.
+- **Bestehende REST-Endpunkte werden schrittweise umgestellt, und zwar immer dann, wenn man ohnehin an ihnen arbeitet.** Sobald ein Endpunkt umgestellt ist, wird die alte REST-Route entfernt. Bis zum Abschluss der Migration bleiben die übrigen bestehen, es werden aber **keine neuen mehr hinzugefügt**.
+- **JSON wird einheitlich über RS-JSON verarbeitet**: Gelesen wird mit `from_str_secure` bzw. `parse_secure` (mit Obergrenzen für Größe, Verschachtelungstiefe und doppelte Schlüssel), geschrieben mit `rust_json::fast`. `prost` wird nicht in das Browser-WASM aufgenommen, da es die Datei vergrößern würde.
+- **Ausnahmen (Schnittstellen, deren Form ein fremder Standard vorgibt und die nicht zu unserer eigenen API gehören)**: ACME, OAuth/OIDC-Callbacks, Webhooks von Drittanbietern (z. B. GitHub), Health-Checks, die Auslieferung statischer Dateien, OTLP und Ähnliches. Diese nehmen, wie vom jeweiligen Standard verlangt, gewöhnliches HTTP entgegen.
+- Referenzimplementierungen: `RPoem` (`open_runo.admin.v1.Admin`) und `open-easy-web` (`server/src/connect.rs`, `proto/open_easy_web/admin/v1/admin.proto`).
+- Hinweis: Ob der Code eines einzelnen Repositorys diese Richtlinie bereits erfüllt, hängt vom jeweiligen Repository ab. Dieser Abschnitt dokumentiert lediglich die Richtlinie; er besagt nicht, dass der Code schon angepasst wurde.
+
+### Русский (перевод выполнен с помощью ИИ и отредактирован; носителями языка пока не проверен)
+- **От REST мы полностью отказываемся; новые API больше не создаются в стиле REST.** API, к которым обращаются из браузера или через `curl`, используют **унарные вызовы Connect** (`POST /<пакет>.<Service>/<Method>`, `content-type: application/json`, тело запроса — JSON). Для взаимодействия между сервисами применяются **gRPC и gRPC-web** — в том же стиле, что и административный API RPoem (`open_runo.admin.v1.Admin`). Потоковая передача данных добавляется лишь тогда, когда в ней действительно возникает необходимость.
+- **Существующие REST-эндпоинты переводятся поэтапно — по мере того, как с ними приходится работать.** После перевода старый REST-маршрут удаляется. Пока миграция не завершена, оставшиеся эндпоинты сохраняются, но **новые не добавляются**.
+- **Работа с JSON унифицирована на основе RS-JSON**: чтение — через `from_str_secure` или `parse_secure` (с ограничениями на размер, глубину вложенности и повторяющиеся ключи), запись — через `rust_json::fast`. `prost` в браузерный WASM не включается, поскольку это увеличило бы размер файла.
+- **Исключения (интерфейсы, форму которых определяет чужой стандарт, а не наш собственный API)**: ACME, обратные вызовы OAuth/OIDC, вебхуки сторонних сервисов (например, GitHub), проверки работоспособности, раздача статических файлов, OTLP и тому подобное. Такие интерфейсы принимают обычный HTTP, как того требует соответствующий стандарт.
+- Эталонные реализации: `RPoem` (`open_runo.admin.v1.Admin`) и `open-easy-web` (`server/src/connect.rs`, `proto/open_easy_web/admin/v1/admin.proto`).
+- Примечание: соответствует ли код конкретного репозитория этой политике, зависит от самого репозитория. Данный раздел лишь фиксирует политику и не означает, что код уже изменён.
+
+## API 方針の補足: 用語の整理と使い分け (2026-11-04)
+
+### 日本語
+**1つに統一するものではなく、別の層の話です。** 「REST の代わり」になるのは Connect・gRPC・GraphQL だけで、WASM は画面を作る技術です。
+
+| 用語 | 何か | REST の代わりか |
+|---|---|---|
+| REST | URL と HTTP メソッドで操作を表す API の作り方 | 全廃する側 |
+| **Connect** | `POST /サービス名/メソッド名` に JSON を送る形式。`curl` でもブラウザの `fetch` でも呼べる | はい(**採用**) |
+| **gRPC** | 同じ「サービス/メソッド」の考え方を、バイナリ(protobuf)と HTTP/2 で行う形式。速く、ストリーミングも得意 | はい(**サービス同士に採用**) |
+| gRPC-web | gRPC のブラウザ向けの変形版 | はい(必要なら) |
+| GraphQL | 欲しい項目を問い合わせる形式 | 一部だけ(**問い合わせ(読み取り)専用**) |
+| WASM | Rust をブラウザの中で動かす仕組み | いいえ(画面を作る技術) |
+
+- **ブラウザの画面や `curl` から呼ぶ API は Connect**(POST、JSON を RS-JSON で読み書き)。ブラウザの WASM は素の gRPC を話せず、Connect なら `fetch` のままで、`prost` を足さずに済む(画面のサイズも増えない)。
+- **サービス同士の通信(サーバー間、重い処理、ストリーミング)は gRPC。** 多くは Connect で足りるので、ストリーミングが必要になった所だけ gRPC に上げる。
+- **GraphQL は、まとめて問い合わせたいときの読み取り専用。** 書き込み(操作)には使わない。
+- **WASM は画面を作る技術として、そのまま使う。** 画面から呼ぶ API が Connect になっただけ。
+- 外部の規格が形を決めるもの(ACME、OAuth のコールバック、第三者の Webhook、ヘルスチェック、静的ファイル、OTLP)は、規格どおりの HTTP のまま。
+- **迷ったら Connect。**
+
+### English
+**These are not alternatives to unify; they sit at different layers.** Only Connect, gRPC and GraphQL can replace REST; WASM is a way to build the UI.
+
+| Term | What it is | Replaces REST? |
+|---|---|---|
+| REST | API style that expresses operations through URLs and HTTP methods | The thing being abolished |
+| **Connect** | `POST /Service/Method` with a JSON body; callable from `curl` and from a browser `fetch` | Yes (**adopted**) |
+| **gRPC** | The same service/method idea over binary (protobuf) and HTTP/2; fast, good at streaming | Yes (**for service-to-service**) |
+| gRPC-web | A browser-friendly variant of gRPC | Yes (if needed) |
+| GraphQL | A query language: ask for exactly the fields you want | Partly (**read-only queries**) |
+| WASM | Runs Rust inside the browser | No (a UI technology) |
+
+- **APIs called from browser screens or `curl` use Connect** (POST, JSON read and written with RS-JSON). Browser WASM cannot speak plain gRPC; with Connect it stays a `fetch`, and `prost` is not needed (the binary does not grow).
+- **Service-to-service calls (server to server, heavy work, streaming) use gRPC.** Connect is enough in most places; move a call to gRPC only where streaming is actually needed.
+- **GraphQL is read-only**, for queries that gather several pieces of data. It is not used for writes (operations).
+- **WASM stays as the way to build the UI.** The API it calls simply became Connect.
+- Interfaces whose shape an outside standard dictates (ACME, OAuth callbacks, third-party webhooks, health checks, static files, OTLP) stay plain HTTP.
+- **When in doubt, use Connect.**
+
+### Deutsch (KI-Übersetzung, sprachlich überarbeitet; noch nicht von Muttersprachlern geprüft)
+**Es geht nicht darum, eine einzige Technik auszuwählen – die Begriffe liegen auf unterschiedlichen Ebenen.** Als Ersatz für REST kommen nur Connect, gRPC und GraphQL in Frage; WASM dagegen ist eine Technik, mit der die Benutzeroberfläche gebaut wird.
+
+| Begriff | Was ist das? | Ersatz für REST? |
+|---|---|---|
+| REST | Ein API-Stil, bei dem Operationen über URLs und HTTP-Methoden ausgedrückt werden | wird abgeschafft |
+| **Connect** | `POST /Dienst/Methode` mit JSON im Body; aufrufbar mit `curl` ebenso wie mit `fetch` im Browser | ja (**gewählt**) |
+| **gRPC** | Dasselbe Prinzip aus Dienst und Methode, aber über binäres protobuf und HTTP/2; schnell und gut für Streaming geeignet | ja (**zwischen Diensten**) |
+| gRPC-web | Eine für den Browser angepasste Variante von gRPC | ja (bei Bedarf) |
+| GraphQL | Abfragesprache, mit der man genau die benötigten Felder anfordert | teilweise (**nur für lesende Abfragen**) |
+| WASM | Führt Rust-Code direkt im Browser aus | nein (Technik für die Oberfläche) |
+
+- **APIs, die von Browseroberflächen oder per `curl` aufgerufen werden, verwenden Connect** (POST; JSON wird mit RS-JSON gelesen und geschrieben). WASM im Browser kann kein reines gRPC sprechen. Mit Connect bleibt es bei einem gewöhnlichen `fetch`, und `prost` ist nicht nötig – die WASM-Datei wird dadurch nicht größer.
+- **Für die Kommunikation zwischen Diensten (Server zu Server, rechenintensive Aufgaben, Streaming) wird gRPC eingesetzt.** In den meisten Fällen reicht Connect aus; auf gRPC wird nur dort umgestellt, wo Streaming tatsächlich gebraucht wird.
+- **GraphQL dient ausschließlich lesenden Abfragen**, wenn mehrere Informationen gebündelt abgefragt werden sollen. Für Schreibzugriffe (Operationen) wird es nicht verwendet.
+- **WASM bleibt die Technik für die Oberfläche.** Geändert hat sich lediglich, dass die aufgerufene API nun auf Connect beruht.
+- Schnittstellen, deren Form durch einen externen Standard festgelegt ist (ACME, OAuth-Callbacks, Webhooks von Drittanbietern, Health-Checks, statische Dateien, OTLP), bleiben gewöhnliches HTTP.
+- **Im Zweifel: Connect.**
+
+### Русский (перевод выполнен с помощью ИИ и литературно отредактирован; носителями языка пока не проверен)
+**Это не варианты, из которых нужно выбрать один, а технологии разных уровней.** Заменить REST могут только Connect, gRPC и GraphQL; WASM же — это способ создания пользовательского интерфейса.
+
+| Термин | Что это | Заменяет REST? |
+|---|---|---|
+| REST | Стиль построения API, при котором операции выражаются через URL и HTTP-методы | отменяется |
+| **Connect** | `POST /Сервис/Метод` с телом в формате JSON; вызывается как из `curl`, так и из браузерного `fetch` | да (**выбран**) |
+| **gRPC** | Тот же принцип «сервис — метод», но поверх двоичного формата protobuf и HTTP/2; работает быстро и хорошо подходит для потоковой передачи | да (**для связи между сервисами**) |
+| gRPC-web | Адаптированный для браузера вариант gRPC | да (при необходимости) |
+| GraphQL | Язык запросов: клиент запрашивает ровно те поля, которые ему нужны | частично (**только запросы на чтение**) |
+| WASM | Позволяет выполнять код на Rust прямо в браузере | нет (технология для интерфейса) |
+
+- **API, которые вызываются из браузерных интерфейсов или через `curl`, строятся на Connect** (POST; JSON читается и записывается через RS-JSON). Браузерный WASM не умеет работать с «чистым» gRPC. С Connect достаточно обычного `fetch`, а `prost` не требуется — размер WASM-файла не увеличивается.
+- **Для обмена между сервисами (сервер — сервер, ресурсоёмкие задачи, потоковая передача) применяется gRPC.** В большинстве случаев достаточно Connect; на gRPC переходят только там, где потоковая передача действительно необходима.
+- **GraphQL используется только для чтения**, когда нужно получить сразу несколько связанных данных. Для записи (операций) он не применяется.
+- **WASM по-прежнему остаётся технологией для интерфейса.** Изменилось лишь то, что вызываемый им API теперь построен на Connect.
+- Интерфейсы, форма которых задана внешним стандартом (ACME, обратные вызовы OAuth, вебхуки сторонних сервисов, проверки работоспособности, статические файлы, OTLP), остаются обычным HTTP.
+- **Если есть сомнения — выбирайте Connect.**
+
+- **2026-11-17 別アカウントでの再開用 / Resume on another account**: 到達点・未了・再開用メッセージは`PORTING.md`末尾「2026-11-17 別アカウントでの再開用メモ」(日英)。*Status, open items and the resume message are at the end of PORTING.md (JA/EN).*
